@@ -84,8 +84,8 @@ export default function App() {
   }, [world, power]);
 
   const handleSpawn = useCallback(() => {
-    if (!cursor) return;
-    const next = spawnCreature(worldRef.current, species, cursor.x, cursor.y);
+    const pos = cursor ?? { x: 50, y: 35 };
+    const next = spawnCreature(worldRef.current, species, pos.x, pos.y);
     worldRef.current = next;
     setWorld({ ...next });
   }, [cursor, species]);
@@ -123,7 +123,7 @@ export default function App() {
             const c = world.creatures.find((o) => Math.floor(o.x) === gx && Math.floor(o.y) === gy);
             setHovered(c?.id ?? null);
           }}
-          onMouseLeave={() => { setCursor(null); setHovered(null); }}
+          onMouseLeave={() => setHovered(null)}
           style={{ imageRendering: "pixelated", maxWidth: "100%", maxHeight: "100%", objectFit: "contain", cursor: "crosshair" }} />
 
         {/* HUD top-left: population */}
