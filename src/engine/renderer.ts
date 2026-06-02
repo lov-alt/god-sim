@@ -167,7 +167,7 @@ export function renderWorld(canvas: HTMLCanvasElement, world: WorldState, cursor
     const cx = Math.floor(c.x) * P, cy = Math.floor(c.y) * P;
     if (!isFinite(cx) || !isFinite(cy)) continue;
     if (c.settlementId !== null) { ctx.fillStyle = "rgba(99,102,241,0.2)"; ctx.fillRect(cx - 2, cy - 2, P * 2 + 4, P * 2 + 4); }
-    const spSize = 1;
+    const spSize = Math.max(2, Math.round(P / 6));
     drawPixelSprite(ctx, speciesSprite[c.species], cx - spSize * 8, cy - spSize * 8, spSize);
     if (c.health < 80) {
       ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(cx, cy - 3, P * 2, 1);
