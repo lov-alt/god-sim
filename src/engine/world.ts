@@ -95,7 +95,9 @@ export function createWorld(): WorldState {
 
 /* ── Creature AI ───────────── */
 
-function act(c: Creature, world: WorldState): { c: Creature; log: string | null } {
+interface TickQueue { eatenIds: Set<number>; offspring: Creature[] }
+
+function act(c: Creature, world: WorldState, queue: TickQueue): { c: Creature; log: string | null } {
   const cfg = SP[c.species];
   let creature = { ...c, age: c.age + 1 };
 
@@ -104,34 +106,33 @@ function act(c: Creature, world: WorldState): { c: Creature; log: string | null 
   if (dead) return { c: creature, log: null };
 
   // Move
-  if (cfg.speed > 0) {
-    const neighbors = [];
-    for (let dy = -1; dy <= 1; dy++)
-      for (let dx = -1; dx <= 1; dx++) {
-        const nx = clamp(Math.floor(c.x) + dx, 0, W - 1), ny = clamp(Math.floor(c.y) + dy, 0, H - 1);
-        neighbors.push({ x: nx, y: ny, cell: world.cells[ny]?.[nx] });
-      }
-    const best = neighbors
-      .filter((n) => n.cell && n.cell.terrain !== "water")
-      .sort((a, b) => (b.cell?.fertility ?? 0) - (a.cell?.fertility ?? 0))[0] ?? neighbors[0];
-    creature.x = clamp(creature.x + (best.x - creature.x) * cfg.speed * 0.2, 0, W - 1);
-    creature.y = clamp(creature.y + (best.y - creature.y) * cfg.speed * 0.2, 0, H - 1);
-  }
+  const move = cfg.speed > 0
+    ? (() => {
+        let bx = creature.x, by = creature.y, bf = -1;
+        for (let dy = -1; dy <= 1; dy++)
+          for (let dx = -1; dx <= 1; dx++) {
+            const nx = clamp(Math.floor(c.x) + dx, 0, W - 1), ny = clamp(Math.floor(c.y) + dy, 0, H - 1);
+            const f = world.cells[ny]?.[nx]?.fertility ?? 0;
+            if (f > bf) { bf = f; bx = nx; by = ny; }
+          }
+        return { x: clamp(creature.x + (bx - creature.x) * cfg.speed * 0.2, 0, W - 1), y: clamp(creature.y + (by - creature.y) * cfg.speed * 0.2, 0, H - 1) };
+      })()
+    : { x: creature.x, y: creature.y };
+  creature = { ...creature, ...move };
 
   // Eat
-  const preyNear = cfg.prey.length > 0 ? world.creatures.filter((o) => o.id !== c.id && cfg.prey.includes(o.species) && dist(c, o) < cfg.vision) : [];
+  const preyNear = cfg.prey.length > 0 ? world.creatures.filter((o) => o.id !== c.id && cfg.prey.includes(o.species) && !queue.eatenIds.has(o.id) && dist(c, o) < cfg.vision) : [];
   const canEat = preyNear.length > 0 && (cfg.diet === "meat" || cfg.diet === "both");
   const canGraze = cfg.diet === "plant" || cfg.diet === "both";
 
-  if (canEat) { const p = preyNear[0]; world.creatures = world.creatures.filter((o) => o.id !== p.id); creature.hunger = 0; return { c: creature, log: `${c.species}#${c.id} ate ${p.species}` }; }
+  if (canEat) { queue.eatenIds.add(preyNear[0].id); creature.hunger = 0; return { c: creature, log: `${c.species}#${c.id} ate ${preyNear[0].species}` }; }
   if (canGraze && (cell?.fertility ?? 0) > 25) { cell!.fertility -= 15; creature.hunger = 0; return { c: creature, log: null }; }
 
   creature.hunger = clamp(creature.hunger + cfg.hungerRate, 0, 100);
 
   // Reproduce
   if (creature.health > cfg.reproduce && creature.hunger < 30) {
-    const off: Creature = { id: ID(), species: c.species, x: near(creature.x, 4), y: near(creature.y, 4), health: 60, age: 0, hunger: 20, settlementId: creature.settlementId };
-    world.creatures.push(off);
+    queue.offspring.push({ id: ID(), species: c.species, x: near(creature.x, 4), y: near(creature.y, 4), health: 60, age: 0, hunger: 20, settlementId: creature.settlementId });
     creature.health = 50;
     return { c: creature, log: `${c.species} reproduced` };
   }
@@ -143,17 +144,22 @@ function act(c: Creature, world: WorldState): { c: Creature; log: string | null 
 
 export function tick(w: WorldState): WorldState {
   const world = { ...w, tick: w.tick + 1, eventLog: [...w.eventLog], creatures: [...w.creatures], cells: w.cells.map((r) => r.map((c) => ({ ...c }))) };
+  const queue: TickQueue = { eatenIds: new Set(), offspring: [] };
   const alive: Creature[] = [];
 
   for (const c of world.creatures) {
-    const { c: updated, log } = act(c, world);
+    const { c: updated, log } = act(c, world, queue);
     if (updated.health <= 0 || updated.hunger >= 100 || updated.age > SP[updated.species].lifespan) continue;
     if (log) world.eventLog.push(log);
     alive.push(updated);
   }
 
-  world.creatures = alive;
-  world.populationHistory.push(alive.length);
+  // Remove eaten
+  const filtered = alive.filter((c) => !queue.eatenIds.has(c.id));
+  // Add offspring
+  filtered.push(...queue.offspring);
+  world.creatures = filtered;
+  world.populationHistory.push(filtered.length);
 
   // Resources
   for (let y = 0; y < H; y++)
