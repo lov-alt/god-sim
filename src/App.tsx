@@ -92,7 +92,7 @@ export default function App() {
 
   const handleSpawn = useCallback(() => {
     const pos = cursorRef.current ?? { x: 50, y: 35 };
-    worldRef.current = spawnCreature(worldRef.current, ui.species, pos.x, pos.y);
+    spawnCreature(worldRef.current, ui.species, pos.x, pos.y);
   }, [ui.species]);
 
   const pop = Object.fromEntries(
