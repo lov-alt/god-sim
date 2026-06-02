@@ -57,14 +57,15 @@ import { createNoise2D } from "simplex-noise";
 
 function genTerrain(): Cell[][] {
   const cells: Cell[][] = [];
-  const elevation = createNoise2D();
-  const moisture = createNoise2D();
+  const seed = Math.random() * 10000;
+  const elevation = createNoise2D(() => 0); // deterministic base, overridden by coordinate offset
+  const moisture = createNoise2D(() => 0);
 
   for (let y = 0; y < H; y++) {
     cells[y] = [];
     for (let x = 0; x < W; x++) {
-      const e = elevation(x * 0.04, y * 0.04);
-      const m = moisture(x * 0.05 + 10, y * 0.05 + 10);
+      const e = elevation((x + seed) * 0.04, (y + seed * 1.7) * 0.04);
+      const m = moisture((x + seed * 0.7) * 0.05, (y + seed * 2.3) * 0.05);
 
       const terrain: Terrain =
         e > 0.5 ? "mountain" :
