@@ -52,35 +52,27 @@ const SP: Record<Species, SpCfg> = {
 
 /* ── Terrain Generation ──── */
 
-function noise(x: number, y: number, s: number): number {
-  const n = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453;
-  return (n - Math.floor(n)) * s;
-}
+import { createNoise2D } from "simplex-noise";
 
 function genTerrain(): Cell[][] {
   const cells: Cell[][] = [];
-  const features = [
-    { cx: 20, cy: 25, r: 18, t: "water" as Terrain },   // lake
-    { cx: 75, cy: 50, r: 12, t: "mountain" as Terrain }, // mountain range
-    { cx: 30, cy: 55, r: 15, t: "forest" as Terrain },   // forest
-    { cx: 60, cy: 20, r: 15, t: "forest" as Terrain },   // forest
-  ];
+  const elevation = createNoise2D();
+  const moisture = createNoise2D();
 
   for (let y = 0; y < H; y++) {
     cells[y] = [];
     for (let x = 0; x < W; x++) {
-      let terrain: Terrain = "plain";
-      const h = noise(x * 0.8, y * 0.6, 1) + noise(x * 0.3, y * 0.4, 0.5);
+      const e = elevation(x * 0.04, y * 0.04);
+      const m = moisture(x * 0.05 + 10, y * 0.05 + 10);
 
-      for (const f of features) {
-        if (Math.hypot(x - f.cx, y - f.cy) < f.r) { terrain = f.t; break; }
-      }
+      const terrain: Terrain =
+        e > 0.5 ? "mountain" :
+        e > 0.25 ? "forest" :
+        e < -0.4 ? "water" :
+        e < -0.15 ? "sand" :
+        m > 0.3 ? "forest" : "grass";
 
-      if (terrain === "plain") {
-        terrain = h > 1.2 ? "mountain" : noise(x * 2, y * 2, 3) > 2 ? "forest" : "grass";
-      }
-
-      cells[y][x] = { terrain, moisture: 30 + rand(40), fertility: 30 + rand(40), building: null };
+      cells[y][x] = { terrain, moisture: Math.floor((m + 1) * 50), fertility: Math.floor((1 - Math.abs(e)) * 100), building: null };
     }
   }
   return cells;
