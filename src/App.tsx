@@ -112,9 +112,9 @@ export default function App() {
             const s = (100 * 10) / rect.width;
             cursorRef.current = { x: Math.floor((e.clientX - rect.left) * s / 10), y: Math.floor((e.clientY - rect.top) * s / 10) };
             const c = ui.world.creatures.find((o) => Math.floor(o.x) === cursorRef.current!.x && Math.floor(o.y) === cursorRef.current!.y);
-            hoveredRef.current =c?.id ?? null);
+            hoveredRef.current = c?.id ?? null;
           }}
-          onMouseLeave={() => hoveredRef.current =null)}
+          onMouseLeave={() => { hoveredRef.current = null; }}
           style={{ imageRendering: "pixelated", maxWidth: "100%", maxHeight: "100%", objectFit: "contain", cursor: "crosshair" }} />
 
         {/* HUD */}
