@@ -236,7 +236,8 @@ export function applyGodPower(w: WorldState, power: GodPower, x: number, y: numb
   return { ...w };
 }
 
-export function spawnCreature(w: WorldState, species: Species, x: number, y: number): WorldState {
+export function spawnCreature(w: WorldState, species: Species, x: number, y: number) {
   const c: Creature = { id: ID(), species, x: clamp(x, 0, W - 1), y: clamp(y, 0, H - 1), health: 80, age: 20, hunger: 20, settlementId: null };
-  return { ...w, creatures: [...w.creatures, c], eventLog: [...w.eventLog, `Created ${species}`] };
+  w.creatures.push(c);
+  w.eventLog.push(`Created ${species}`);
 }
