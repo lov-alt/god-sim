@@ -108,13 +108,17 @@ const SPR: Record<string, string[]> = {
 };
 
 function drawPixelSprite(ctx: CanvasRenderingContext2D, sprite: string[] | undefined, x: number, y: number, px: number) {
-  if (!sprite) return;
-  for (let row = 0; row < sprite.length; row++) {
-    for (let col = 0; col < sprite[row].length; col++) {
-      const c = PAL[sprite[row][col] ?? "."];
-      if (c) { ctx.fillStyle = c; ctx.fillRect(x + col * px, y + row * px, px, px); }
+  if (!sprite || !isFinite(x) || !isFinite(y) || px <= 0) return;
+  try {
+    for (let row = 0; row < sprite.length; row++) {
+      const line = sprite[row];
+      if (!line) continue;
+      for (let col = 0; col < line.length; col++) {
+        const c = PAL[line[col] ?? "."];
+        if (c) ctx.fillRect(x + col * px, y + row * px, px, px);
+      }
     }
-  }
+  } catch { /* sprite render error — skip */ }
 }
 
 const speciesSprite: Record<string, string[]> = {
@@ -124,10 +128,11 @@ const speciesSprite: Record<string, string[]> = {
 /* ── Render ────────────────── */
 
 export function renderWorld(canvas: HTMLCanvasElement, world: WorldState, cursor: { x: number; y: number } | null) {
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return;
-  canvas.width = W * P; canvas.height = H * P;
-  ctx.imageSmoothingEnabled = false;
+  try {
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    canvas.width = W * P; canvas.height = H * P;
+    ctx.imageSmoothingEnabled = false;
 
   const sc = [["#1a1a3e", "#2d2d5e", "#3a5a8a"], ["#0f0f2e", "#1e3a5e", "#4a8aba"], ["#2a1a1e", "#4a3a2e", "#8a6a4a"], ["#1a1a2e", "#2a2a3e", "#6a6a8a"]][world.season % 4];
   const sky = ctx.createLinearGradient(0, 0, 0, H * P);
@@ -160,6 +165,7 @@ export function renderWorld(canvas: HTMLCanvasElement, world: WorldState, cursor
   // Creatures
   for (const c of world.creatures) {
     const cx = Math.floor(c.x) * P, cy = Math.floor(c.y) * P;
+    if (!isFinite(cx) || !isFinite(cy)) continue;
     if (c.settlementId !== null) { ctx.fillStyle = "rgba(99,102,241,0.2)"; ctx.fillRect(cx - 2, cy - 2, P * 2 + 4, P * 2 + 4); }
     drawPixelSprite(ctx, speciesSprite[c.species], cx - P * 4, cy - P * 4, Math.ceil(P / 2));
     if (c.health < 80) {
@@ -176,4 +182,5 @@ export function renderWorld(canvas: HTMLCanvasElement, world: WorldState, cursor
   }
 
   if (cursor) { ctx.fillStyle = "rgba(255,255,255,0.15)"; ctx.fillRect(cursor.x * P, cursor.y * P, P, P); }
+  } catch { /* render error — world might be in transition, skip this frame */ }
 }
