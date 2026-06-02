@@ -1,236 +1,244 @@
-/* ── God Sim — World Engine ── */
+/* ── God Sim v2 — Natural Biomes + Settlements ── */
 
-export type Terrain = "grass" | "dirt" | "stone" | "water" | "sand";
-export type Species = "tree" | "bush" | "rabbit" | "deer" | "wolf" | "human";
-export type GodPower = "smite" | "rain" | "plague" | "bless" | "fire" | "terraform" | "lightning" | "heal";
+export type Terrain = "grass" | "forest" | "mountain" | "water" | "sand" | "plain";
+export type Species = "tree" | "rabbit" | "deer" | "wolf" | "human";
+export type GodPower = "bless" | "rain" | "smite" | "heal" | "fire" | "plague" | "terraform" | "lightning";
 
-export interface Cell { terrain: Terrain; moisture: number; fertility: number; }
-export interface Creature { id: number; species: Species; x: number; y: number; health: number; age: number; hunger: number; }
-export interface WorldState { cells: Cell[][]; creatures: Creature[]; tick: number; populationHistory: number[]; eventLog: string[]; }
-export type DispatchFn = (a: WorldState) => WorldState;
+export interface Cell {
+  terrain: Terrain; moisture: number; fertility: number;
+  building: string | null; // null or "hut" | "farm" | "house" | "temple"
+}
+
+export interface Creature {
+  id: number; species: Species; x: number; y: number;
+  health: number; age: number; hunger: number;
+  settlementId: number | null; // human's home settlement
+}
+
+export interface Settlement {
+  id: number; x: number; y: number; population: number; houses: number; farms: number; level: number;
+}
+
+export interface WorldState {
+  cells: Cell[][]; creatures: Creature[]; settlements: Settlement[];
+  tick: number; season: number; eventLog: string[]; populationHistory: number[];
+  activeEffects: { power: GodPower; x: number; y: number; tick: number }[];
+  W: number; H: number;
+}
 
 const W = 100, H = 70;
-let _nextId = 1;
-const idGen = () => _nextId++;
-
-/* ── Terrain helpers ──────── */
+let _id = 1;
+const ID = () => _id++;
 
 const rand = (n: number) => Math.floor(Math.random() * n);
 const near = (v: number, r: number) => v + (Math.random() - 0.5) * r * 2;
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
-const dist = (a: Creature, b: Creature) => Math.hypot(a.x - b.x, b.y - b.y);
+const dist = (a: { x: number; y: number }, b: { x: number; y: number }) => Math.hypot(a.x - b.x, b.y - b.y);
 
-const TERRAIN_WEIGHTS: Record<Terrain, number> = { grass: 0.45, dirt: 0.25, stone: 0.1, water: 0.1, sand: 0.1 };
-const TERRAIN_KEYS = Object.keys(TERRAIN_WEIGHTS) as Terrain[];
+/* ── Species Config ──────── */
 
-function pickTerrain(): Terrain {
-  const r = Math.random();
-  let acc = 0;
-  for (const t of TERRAIN_KEYS) { acc += TERRAIN_WEIGHTS[t]; if (r <= acc) return t; }
-  return "grass";
+interface SpCfg {
+  diet: "plant" | "meat" | "both"; speed: number; reproduce: number;
+  offspring: number; lifespan: number; hungerRate: number; vision: number; prey: Species[];
 }
 
-/* ── Species config ───────── */
-
-interface SpeciesConfig {
-  diet: "plant" | "meat" | "both"; speed: number; reproduceAt: number; offspring: number;
-  lifespan: number; hungerRate: number; vision: number; prey: Species[];
-}
-
-const SPECIES: Record<Species, SpeciesConfig> = {
-  tree: { diet: "plant", speed: 0, reproduceAt: 80, offspring: 2, lifespan: 600, hungerRate: 0, vision: 0, prey: [] },
-  bush: { diet: "plant", speed: 0, reproduceAt: 60, offspring: 3, lifespan: 400, hungerRate: 0, vision: 0, prey: [] },
-  rabbit: { diet: "plant", speed: 2, reproduceAt: 70, offspring: 4, lifespan: 300, hungerRate: 0.8, vision: 8, prey: [] },
-  deer: { diet: "plant", speed: 1.5, reproduceAt: 85, offspring: 2, lifespan: 500, hungerRate: 0.6, vision: 10, prey: [] },
-  wolf: { diet: "meat", speed: 2.5, reproduceAt: 90, offspring: 2, lifespan: 350, hungerRate: 1.2, vision: 12, prey: ["rabbit", "deer"] },
-  human: { diet: "both", speed: 1.5, reproduceAt: 95, offspring: 1, lifespan: 700, hungerRate: 0.8, vision: 15, prey: ["rabbit", "deer", "wolf"] },
+const SP: Record<Species, SpCfg> = {
+  tree: { diet: "plant", speed: 0, reproduce: 90, offspring: 3, lifespan: 600, hungerRate: 0, vision: 0, prey: [] },
+  rabbit: { diet: "plant", speed: 2, reproduce: 70, offspring: 4, lifespan: 250, hungerRate: 0.8, vision: 8, prey: [] },
+  deer: { diet: "plant", speed: 1.5, reproduce: 85, offspring: 2, lifespan: 400, hungerRate: 0.6, vision: 10, prey: [] },
+  wolf: { diet: "meat", speed: 2.5, reproduce: 90, offspring: 2, lifespan: 300, hungerRate: 1.2, vision: 12, prey: ["rabbit", "deer"] },
+  human: { diet: "both", speed: 1.2, reproduce: 95, offspring: 1, lifespan: 700, hungerRate: 0.5, vision: 18, prey: ["rabbit", "deer", "wolf"] },
 };
 
-/* ── World init ────────────── */
+/* ── Terrain Generation ──── */
 
-export function createWorld(): WorldState {
+function noise(x: number, y: number, s: number): number {
+  const n = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453;
+  return (n - Math.floor(n)) * s;
+}
+
+function genTerrain(): Cell[][] {
   const cells: Cell[][] = [];
+  const features = [
+    { cx: 20, cy: 25, r: 18, t: "water" as Terrain },   // lake
+    { cx: 75, cy: 50, r: 12, t: "mountain" as Terrain }, // mountain range
+    { cx: 30, cy: 55, r: 15, t: "forest" as Terrain },   // forest
+    { cx: 60, cy: 20, r: 15, t: "forest" as Terrain },   // forest
+  ];
+
   for (let y = 0; y < H; y++) {
     cells[y] = [];
     for (let x = 0; x < W; x++) {
-      cells[y][x] = { terrain: pickTerrain(), moisture: rand(100), fertility: rand(100) };
+      let terrain: Terrain = "plain";
+      const h = noise(x * 0.8, y * 0.6, 1) + noise(x * 0.3, y * 0.4, 0.5);
+
+      for (const f of features) {
+        if (Math.hypot(x - f.cx, y - f.cy) < f.r) { terrain = f.t; break; }
+      }
+
+      if (terrain === "plain") {
+        terrain = h > 1.2 ? "mountain" : noise(x * 2, y * 2, 3) > 2 ? "forest" : "grass";
+      }
+
+      cells[y][x] = { terrain, moisture: 30 + rand(40), fertility: 30 + rand(40), building: null };
     }
   }
-  // Rivers
-  for (let x = 0; x < W; x++) {
-    const y = 30 + Math.floor(Math.sin(x * 0.1) * 8) + rand(6);
-    for (let dy = 0; dy < 3; dy++) cells[Math.min(H - 1, y + dy)][x].terrain = "water";
-  }
+  return cells;
+}
 
+/* ── World Init ────────────── */
+
+export function createWorld(): WorldState {
+  const cells = genTerrain();
   const creatures: Creature[] = [];
-  const spawn = (s: Species, count: number) => {
-    for (let i = 0; i < count; i++) creatures.push({ id: idGen(), species: s, x: rand(W), y: rand(H - 20), health: 100, age: rand(50), hunger: 0 });
+  const spawn = (s: Species, n: number) => {
+    for (let i = 0; i < n; i++) creatures.push({ id: ID(), species: s, x: rand(W), y: rand(H), health: 80 + rand(20), age: rand(50), hunger: rand(20), settlementId: null });
   };
-  spawn("tree", 15); spawn("bush", 25);
-  spawn("rabbit", 20); spawn("deer", 10);
-  spawn("wolf", 6); spawn("human", 8);
+  spawn("tree", 30); spawn("rabbit", 25); spawn("deer", 15); spawn("wolf", 8); spawn("human", 12);
 
-  return { cells, creatures, tick: 0, populationHistory: [], eventLog: ["World created. Your creatures await your will."] };
+  return {
+    cells, creatures, settlements: [], tick: 0, season: 0, eventLog: ["🌍 A new world takes shape. Your creatures await."], populationHistory: [], activeEffects: [], W, H,
+  };
 }
 
-/* ── Creature behavior ────── */
+/* ── Creature AI ───────────── */
 
-function moveTowards(c: Creature, tx: number, ty: number): Creature {
-  const dx = tx - c.x, dy = ty - c.y, d = Math.hypot(dx, dy) || 1;
-  const cfg = SPECIES[c.species];
-  const vx = (dx / d) * cfg.speed, vy = (dy / d) * cfg.speed;
-  return { ...c, x: clamp(c.x + vx, 0, W - 1), y: clamp(c.y + vy, 0, H - 1) };
-}
+function act(c: Creature, world: WorldState): { c: Creature; log: string | null } {
+  const cfg = SP[c.species];
+  let creature = { ...c, age: c.age + 1 };
 
-function tryEat(c: Creature, world: WorldState): { c: Creature; log?: string } {
-  const cfg = SPECIES[c.species];
-  const cell = world.cells[Math.floor(c.y)]?.[Math.floor(c.x)];
-  const food = cfg.diet === "plant" || cfg.diet === "both" ? cell?.fertility ?? 0 : 0;
-  const nearby = world.creatures.filter((o) => o.id !== c.id && cfg.prey.includes(o.species) && dist(c, o) < cfg.vision);
+  const cell = world.cells[clamp(Math.floor(creature.y), 0, H - 1)]?.[clamp(Math.floor(creature.x), 0, W - 1)];
+  const dead = creature.age > cfg.lifespan || creature.hunger >= 100 || (!cell) || (cell.terrain === "water" && c.species !== "human") || (cell.terrain === "mountain" && c.species === "rabbit");
+  if (dead) return { c: creature, log: null };
 
-  const plantEat = food > 20 && (cfg.diet === "plant" || cfg.diet === "both");
-  const meatEat = nearby.length > 0 && (cfg.diet === "meat" || cfg.diet === "both");
-
-  if (plantEat) return { c: { ...c, hunger: 0 }, log: `${c.species}#${c.id} grazed` };
-  if (meatEat) {
-    const prey = nearby[0];
-    world.creatures = world.creatures.filter((o) => o.id !== prey.id);
-    return { c: { ...c, hunger: 0 }, log: `${c.species}#${c.id} hunted ${prey.species}#${prey.id}` };
+  // Move
+  if (cfg.speed > 0) {
+    const neighbors = [];
+    for (let dy = -1; dy <= 1; dy++)
+      for (let dx = -1; dx <= 1; dx++) {
+        const nx = clamp(Math.floor(c.x) + dx, 0, W - 1), ny = clamp(Math.floor(c.y) + dy, 0, H - 1);
+        neighbors.push({ x: nx, y: ny, cell: world.cells[ny]?.[nx] });
+      }
+    const best = neighbors
+      .filter((n) => n.cell && n.cell.terrain !== "water")
+      .sort((a, b) => (b.cell?.fertility ?? 0) - (a.cell?.fertility ?? 0))[0] ?? neighbors[0];
+    creature.x = clamp(creature.x + (best.x - creature.x) * cfg.speed * 0.2, 0, W - 1);
+    creature.y = clamp(creature.y + (best.y - creature.y) * cfg.speed * 0.2, 0, H - 1);
   }
-  return { c: { ...c, hunger: clamp(c.hunger + cfg.hungerRate, 0, 100) } };
+
+  // Eat
+  const preyNear = cfg.prey.length > 0 ? world.creatures.filter((o) => o.id !== c.id && cfg.prey.includes(o.species) && dist(c, o) < cfg.vision) : [];
+  const canEat = preyNear.length > 0 && (cfg.diet === "meat" || cfg.diet === "both");
+  const canGraze = cfg.diet === "plant" || cfg.diet === "both";
+
+  if (canEat) { const p = preyNear[0]; world.creatures = world.creatures.filter((o) => o.id !== p.id); creature.hunger = 0; return { c: creature, log: `${c.species}#${c.id} ate ${p.species}` }; }
+  if (canGraze && (cell?.fertility ?? 0) > 25) { cell!.fertility -= 15; creature.hunger = 0; return { c: creature, log: null }; }
+
+  creature.hunger = clamp(creature.hunger + cfg.hungerRate, 0, 100);
+
+  // Reproduce
+  if (creature.health > cfg.reproduce && creature.hunger < 30) {
+    const off: Creature = { id: ID(), species: c.species, x: near(creature.x, 4), y: near(creature.y, 4), health: 60, age: 0, hunger: 20, settlementId: creature.settlementId };
+    world.creatures.push(off);
+    creature.health = 50;
+    return { c: creature, log: `${c.species} reproduced` };
+  }
+
+  return { c: creature, log: null };
 }
 
 /* ── Tick ─────────────────── */
 
-export function tick(world: WorldState): WorldState {
-  const newWorld = { ...world, tick: world.tick + 1, creatures: [...world.creatures], eventLog: [...world.eventLog] };
+export function tick(w: WorldState): WorldState {
+  const world = { ...w, tick: w.tick + 1, eventLog: [...w.eventLog], creatures: [...w.creatures], cells: w.cells.map((r) => r.map((c) => ({ ...c }))) };
   const alive: Creature[] = [];
 
-  for (const c of newWorld.creatures) {
-    const cfg = SPECIES[c.species];
-    let creature = { ...c, age: c.age + 1 };
-    const cell = newWorld.cells[Math.floor(clamp(creature.y, 0, H - 1))]?.[Math.floor(clamp(creature.x, 0, W - 1))];
-
-    // Death: old age, starvation, or hostile terrain
-    const deadByAge = creature.age > cfg.lifespan;
-    const deadByHunger = creature.hunger >= 100;
-    const deadByTerrain = !cell || cell.terrain === "water" && creature.species !== "human";
-    if (deadByAge || deadByHunger || deadByTerrain) continue;
-
-    // Act
-    if (cfg.speed > 0) creature = moveTowards(creature, near(creature.x, cfg.vision), near(creature.y, cfg.vision));
-    const { c: fed, log } = tryEat(creature, newWorld);
-    creature = fed;
-    if (log) newWorld.eventLog.push(log);
-
-    // Reproduce
-    if (creature.health > cfg.reproduceAt && creature.hunger < 40) {
-      const offspring: Creature = { id: idGen(), species: c.species, x: near(creature.x, 3), y: near(creature.y, 3), health: 60, age: 0, hunger: 20 };
-      alive.push(offspring);
-      creature.health = 50;
-    }
-
-    alive.push(creature);
+  for (const c of world.creatures) {
+    const { c: updated, log } = act(c, world);
+    if (updated.health <= 0 || updated.hunger >= 100 || updated.age > SP[updated.species].lifespan) continue;
+    if (log) world.eventLog.push(log);
+    alive.push(updated);
   }
 
-  // Resource regen
+  world.creatures = alive;
+  world.populationHistory.push(alive.length);
+
+  // Resources
   for (let y = 0; y < H; y++)
     for (let x = 0; x < W; x++) {
-      const c = newWorld.cells[y][x];
-      c.moisture = clamp(c.moisture + (c.terrain === "water" ? 5 : rand(2) - 1), 0, 100);
-      c.fertility = clamp(c.fertility + rand(2) - (c.terrain === "sand" ? 2 : 0), 0, 100);
+      const c = world.cells[y][x];
+      c.moisture = clamp(c.moisture + rand(2) - 1 + (c.terrain === "water" ? 3 : 0), 0, 100);
+      c.fertility = clamp(c.fertility + rand(2) - 1, 0, 100);
     }
 
-  newWorld.creatures = alive;
-  newWorld.populationHistory.push(alive.length);
-  if (newWorld.eventLog.length > 50) newWorld.eventLog = newWorld.eventLog.slice(-30);
+  // Season
+  world.season = Math.floor(world.tick / 200) % 4; // spring, summer, autumn, winter
 
-  // God events
-  const events = applyGodEvents(newWorld);
-  newWorld.eventLog.push(...events);
+  // Settlements: humans near each other form settlements
+  const humans = alive.filter((c) => c.species === "human");
+  const settled = new Set<number>();
+  for (const h of humans) {
+    if (settled.has(h.id)) continue;
+    const group = humans.filter((o) => !settled.has(o.id) && dist(h, o) < 10);
+    if (group.length >= 3) {
+      const sx = Math.floor(group.reduce((s, c) => s + c.x, 0) / group.length);
+      const sy = Math.floor(group.reduce((s, c) => s + c.y, 0) / group.length);
+      const existing = world.settlements.find((s) => dist(s, { x: sx, y: sy }) < 8);
+      const settlement = existing ?? { id: ID(), x: sx, y: sy, population: 0, houses: 1, farms: 0, level: 1 };
+      if (!existing) world.settlements.push(settlement);
+      settlement.population = group.length;
+      settlement.houses = Math.min(8, Math.floor(group.length / 3) + 1);
+      settlement.farms = Math.min(6, Math.floor(group.length / 5));
+      settlement.level = Math.floor(settlement.population / 10) + 1;
+      for (const g of group) { g.settlementId = settlement.id; settled.add(g.id); }
+      // Build on cells
+      for (let dy = -2; dy <= 2; dy++)
+        for (let dx = -2; dx <= 2; dx++) {
+          const cx = clamp(sx + dx, 0, W - 1), cy = clamp(sy + dy, 0, H - 1);
+          if (Math.abs(dx) + Math.abs(dy) <= 2) world.cells[cy][cx].building = settlement.level >= 3 ? "house" : "hut";
+          else if (Math.abs(dx) + Math.abs(dy) <= 4) world.cells[cy][cx].building = "farm";
+          if (settlement.level >= 5) world.cells[cy][cx].building = world.cells[cy][cx].building === "hut" ? "house" : "temple";
+        }
+    }
+  }
 
-  return newWorld;
+  // Random god events
+  if (Math.random() < 0.02) {
+    const p: GodPower = ["rain", "plague", "lightning"][rand(3)] as GodPower;
+    const fx = rand(W), fy = rand(H);
+    GOD_EFFECTS[p](world, fx, fy);
+    world.activeEffects.push({ power: p, x: fx, y: fy, tick: world.tick });
+  }
+
+  // Effects fade
+  world.activeEffects = world.activeEffects.filter((e) => world.tick - e.tick < 40);
+
+  if (world.eventLog.length > 60) world.eventLog = world.eventLog.slice(-30);
+  return world;
 }
 
 /* ── God Powers ────────────── */
 
-const GOD_EFFECTS: Record<GodPower, (w: WorldState, x: number, y: number) => string[]> = {
-  smite: (w, x, y) => {
-    const before = w.creatures.length;
-    w.creatures = w.creatures.filter((c) => dist(c, { x, y } as any) > 6);
-    return [`⚡ SMITE! ${before - w.creatures.length} creatures destroyed at (${x}, ${y})`];
-  },
+const GOD_EFFECTS: Record<GodPower, (w: WorldState, x: number, y: number) => void> = {
+  smite: (w, x, y) => { w.creatures = w.creatures.filter((c) => dist(c, { x, y }) > 5); w.eventLog.push(`⚡ SMITE!`); w.activeEffects.push({ power: "smite", x, y, tick: w.tick }); },
   rain: (w, x, y) => {
-    for (let dy = -8; dy <= 8; dy++)
-      for (let dx = -8; dx <= 8; dx++) {
-        const cx = Math.floor(x + dx), cy = Math.floor(y + dy);
-        if (w.cells[cy]?.[cx]) { w.cells[cy][cx].moisture = 100; w.cells[cy][cx].fertility = clamp(w.cells[cy][cx].fertility + 30, 0, 100); }
-      }
-    return [`🌧️ RAIN blessed the land at (${x}, ${y})`];
+    for (let dy = -10; dy <= 10; dy++) for (let dx = -10; dx <= 10; dx++) { const cx = clamp(x + dx, 0, W - 1), cy = clamp(y + dy, 0, H - 1); w.cells[cy][cx].moisture = 100; w.cells[cy][cx].fertility = clamp(w.cells[cy][cx].fertility + 40, 0, 100); }
+    w.eventLog.push(`🌧️ Rain blessed the land`); w.activeEffects.push({ power: "rain", x, y, tick: w.tick });
   },
-  plague: (w, x, y) => {
-    let count = 0;
-    w.creatures = w.creatures.map((c) => dist(c, { x, y } as any) < 10 && Math.random() < 0.4 ? (count++, { ...c, health: 20 }) : c);
-    return [`🦠 PLAGUE infected ${count} creatures at (${x}, ${y})`];
-  },
-  bless: (w, x, y) => {
-    w.creatures = w.creatures.map((c) => dist(c, { x, y } as any) < 10 ? { ...c, health: 100, hunger: 0 } : c);
-    for (let dy = -5; dy <= 5; dy++)
-      for (let dx = -5; dx <= 5; dx++) {
-        const cx = Math.floor(x + dx), cy = Math.floor(y + dy);
-        if (w.cells[cy]?.[cx]) { w.cells[cy][cx].fertility = 100; w.cells[cy][cx].moisture = 80; }
-      }
-    return [`✨ BLESS — creatures healed, land enriched at (${x}, ${y})`];
-  },
-  fire: (w, x, y) => {
-    for (let dy = -6; dy <= 6; dy++)
-      for (let dx = -6; dx <= 6; dx++) {
-        const cx = Math.floor(x + dx), cy = Math.floor(y + dy);
-        if (w.cells[cy]?.[cx]) { w.cells[cy][cx].fertility = 0; w.cells[cy][cx].terrain = "dirt"; }
-      }
-    w.creatures = w.creatures.filter((c) => dist(c, { x, y } as any) > 5 || c.species === "human");
-    return [`🔥 FIRE scorched the land at (${x}, ${y})`];
-  },
-  terraform: (w, x, y) => {
-    const terrains: Terrain[] = ["grass", "water", "stone", "sand", "dirt"];
-    for (let dy = -4; dy <= 4; dy++)
-      for (let dx = -4; dx <= 4; dx++) {
-        const cx = Math.floor(x + dx), cy = Math.floor(y + dy);
-        if (w.cells[cy]?.[cx]) w.cells[cy][cx].terrain = terrains[Math.floor(Math.random() * terrains.length)];
-      }
-    return [`🏔️ TERRAFORM reshaped the land at (${x}, ${y})`];
-  },
-  lightning: (w, x, y) => {
-    w.creatures = w.creatures.filter((c) => dist(c, { x, y } as any) > 3 || c.id === 0);
-    if (w.cells[y]?.[x]) { w.cells[y][x].fertility = 100; w.cells[y][x].terrain = "stone"; }
-    return [`⚡ LIGHTNING struck (${x}, ${y})`];
-  },
-  heal: (w, x, y) => {
-    w.creatures = w.creatures.map((c) => dist(c, { x, y } as any) < 8 ? { ...c, health: 100 } : c);
-    return [`💚 HEAL restored all nearby creatures at (${x}, ${y})`];
-  },
+  plague: (w, x, y) => { let n = 0; w.creatures = w.creatures.map((c) => dist(c, { x, y }) < 12 && Math.random() < 0.4 ? (n++, { ...c, health: 15 }) : c); w.eventLog.push(`🦠 Plague infected ${n} creatures`); w.activeEffects.push({ power: "plague", x, y, tick: w.tick }); },
+  bless: (w, x, y) => { w.creatures = w.creatures.map((c) => dist(c, { x, y }) < 10 ? { ...c, health: 100, hunger: 0 } : c); for (let dy = -6; dy <= 6; dy++) for (let dx = -6; dx <= 6; dx++) { const cx = clamp(x + dx, 0, W - 1), cy = clamp(y + dy, 0, H - 1); w.cells[cy][cx].fertility = 100; } w.eventLog.push(`✨ Blessed`); w.activeEffects.push({ power: "bless", x, y, tick: w.tick }); },
+  fire: (w, x, y) => { for (let dy = -8; dy <= 8; dy++) for (let dx = -8; dx <= 8; dx++) { const cx = clamp(x + dx, 0, W - 1), cy = clamp(y + dy, 0, H - 1); const cell = w.cells[cy][cx]; cell.fertility = 0; cell.moisture = 0; cell.building = null; if (cell.terrain === "forest") cell.terrain = "dirt"; } w.creatures = w.creatures.filter((c) => dist(c, { x, y }) > 6 || c.species === "human"); w.eventLog.push(`🔥 FIRE!`); w.activeEffects.push({ power: "fire", x, y, tick: w.tick }); },
+  terraform: (w, x, y) => { const terrains: Terrain[] = ["grass", "forest", "mountain", "water"]; for (let dy = -5; dy <= 5; dy++) for (let dx = -5; dx <= 5; dx++) { const cx = clamp(x + dx, 0, W - 1), cy = clamp(y + dy, 0, H - 1); w.cells[cy][cx].terrain = terrains[rand(4)]; } w.eventLog.push(`🏔️ Terraformed`); w.activeEffects.push({ power: "terraform", x, y, tick: w.tick }); },
+  lightning: (w, x, y) => { w.creatures = w.creatures.filter((c) => dist(c, { x, y }) > 3 || c.id < 0); const cx = clamp(x, 0, W - 1), cy = clamp(y, 0, H - 1); w.cells[cy][cx].fertility = 100; w.cells[cy][cx].terrain = "stone" as Terrain; w.eventLog.push(`⚡ Lightning!`); w.activeEffects.push({ power: "lightning", x, y, tick: w.tick }); },
+  heal: (w, x, y) => { w.creatures = w.creatures.map((c) => dist(c, { x, y }) < 10 ? { ...c, health: 100 } : c); w.eventLog.push(`💚 Healed`); w.activeEffects.push({ power: "heal", x, y, tick: w.tick }); },
 };
 
-function randomEvent(w: WorldState): string | null {
-  const r = Math.random();
-  if (r < 0.03) return applyGodEffects(w, "plague", rand(W), rand(H))[0] ?? null;
-  if (r < 0.06) return applyGodEffects(w, "lightning", rand(W), rand(H))[0] ?? null;
-  if (r < 0.09) return applyGodEffects(w, "rain", rand(W), rand(H))[0] ?? null;
-  return null;
+export function applyGodPower(w: WorldState, power: GodPower, x: number, y: number): WorldState {
+  GOD_EFFECTS[power]?.(w, x, y);
+  return { ...w };
 }
 
-function applyGodEvents(w: WorldState): string[] {
-  const logs: string[] = [];
-  const event = randomEvent(w);
-  if (event) logs.push(event);
-  return logs;
-}
-
-export function applyGodEffects(w: WorldState, power: GodPower, x: number, y: number): string[] {
-  return (GOD_EFFECTS[power] ?? GOD_EFFECTS.smite)(w, clamp(x, 0, W - 1), clamp(y, 0, H - 1));
-}
-
-export function addCreature(w: WorldState, species: Species, x: number, y: number): WorldState {
-  const c: Creature = { id: idGen(), species, x: clamp(x, 0, W - 1), y: clamp(y, 0, H - 1), health: 80, age: 20, hunger: 20 };
-  return { ...w, creatures: [...w.creatures, c], eventLog: [...w.eventLog, `Created ${species} at (${Math.floor(x)}, ${Math.floor(y)})`] };
+export function spawnCreature(w: WorldState, species: Species, x: number, y: number): WorldState {
+  const c: Creature = { id: ID(), species, x: clamp(x, 0, W - 1), y: clamp(y, 0, H - 1), health: 80, age: 20, hunger: 20, settlementId: null };
+  return { ...w, creatures: [...w.creatures, c], eventLog: [...w.eventLog, `Created ${species}`] };
 }
