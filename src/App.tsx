@@ -65,7 +65,7 @@ export default function App() {
   // God power on click
   const handleClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
-    const scale = (100 * 8) / rect.width;
+    const scale = (100 * 10) / rect.width;
     const gx = Math.floor((e.clientX - rect.left) * scale / 8);
     const gy = Math.floor((e.clientY - rect.top) * scale / 8);
     const cList = world.creatures.filter((o) => Math.floor(o.x) === gx && Math.floor(o.y) === gy);
@@ -116,7 +116,7 @@ export default function App() {
           onClick={handleClick}
           onMouseMove={(e) => {
             const rect = e.currentTarget.getBoundingClientRect();
-            const scale = (100 * 8) / rect.width;
+            const scale = (100 * 10) / rect.width;
             const gx = Math.floor((e.clientX - rect.left) * scale / 8);
             const gy = Math.floor((e.clientY - rect.top) * scale / 8);
             setCursor({ x: gx, y: gy });
