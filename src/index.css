@@ -1,0 +1,11 @@
+@import "tailwindcss";
+
+@theme { --font-sans: system-ui, sans-serif; }
+
+body { margin: 0; background: #09090b; overflow: hidden; }
+
+* { box-sizing: border-box; }
+
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #27272a; border-radius: 2px; }
