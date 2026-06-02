@@ -244,6 +244,23 @@ export function applyGodPower(w: WorldState, power: GodPower, x: number, y: numb
 }
 
 export function spawnCreature(w: WorldState, species: Species, x: number, y: number) {
-  w.pendingSpawns.push({ species, x: clamp(x, 0, W - 1), y: clamp(y, 0, H - 1) });
+  // Find nearest valid terrain (not water, not mountain for rabbit)
+  let sx = clamp(x, 0, W - 1), sy = clamp(y, 0, H - 1);
+  const cell = w.cells[sy]?.[sx];
+  const deadTerrain = !cell || cell.terrain === "water" || (cell.terrain === "mountain" && species === "rabbit");
+  if (deadTerrain) {
+    for (let r = 1; r < 10; r++) {
+      for (let dy = -r; dy <= r; dy++)
+        for (let dx = -r; dx <= r; dx++) {
+          const nx = clamp(x + dx, 0, W - 1), ny = clamp(y + dy, 0, H - 1);
+          const nc = w.cells[ny]?.[nx];
+          if (nc && nc.terrain !== "water" && !(nc.terrain === "mountain" && species === "rabbit")) {
+            sx = nx; sy = ny;
+            r = 100; break; // break outer loop
+          }
+        }
+    }
+  }
+  w.pendingSpawns.push({ species, x: sx, y: sy });
   w.eventLog.push(`Created ${species}`);
 }
