@@ -93,6 +93,8 @@ export default function App() {
   const handleSpawn = useCallback(() => {
     const pos = cursorRef.current ?? { x: 50, y: 35 };
     spawnCreature(worldRef.current, ui.species, pos.x, pos.y);
+    // Force immediate UI update so event log shows the spawn
+    setUi((p) => ({ ...p, world: worldRef.current }));
   }, [ui.species]);
 
   const pop = Object.fromEntries(
