@@ -36,13 +36,21 @@ export default function App() {
   const [info, setInfo] = useState<any>(null);
   const [hovered, setHovered] = useState<number | null>(null);
 
-  // Tick
+  // Tick — defensive wrapper
   useEffect(() => {
     if (paused) return;
     const interval = setInterval(() => {
-      const next = tick(worldRef.current);
-      worldRef.current = next;
-      setWorld(next);
+      try {
+        const next = tick(worldRef.current);
+        worldRef.current = next;
+        setWorld(next);
+      } catch (e) {
+        console.error("Tick crashed:", e);
+        // Reset world if corrupted
+        const fresh = createWorld();
+        worldRef.current = fresh;
+        setWorld(fresh);
+      }
     }, 400 / speed);
     return () => clearInterval(interval);
   }, [paused, speed]);

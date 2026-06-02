@@ -1,9 +1,9 @@
 import type { WorldState, Terrain } from "./world";
 
-const W = 100, H = 70, PX = 8;
+const W = 100, H = 70, PX = 10;
 
 const TEX: Record<Terrain, string> = {
-  grass: "#5a9e4b", forest: "#2d6b1e", plain: "#7ab648", mountain: "#8a8a8a", water: "#3b82f6", sand: "#e2c171",
+  grass: "#6db35a", forest: "#3a7d28", plain: "#8cc96a", mountain: "#9a9a9a", water: "#4d94ff", sand: "#f0d480",
 };
 
 const SEASON_TINT: Record<number, (c: string) => string> = {
@@ -95,7 +95,8 @@ export function renderWorld(canvas: HTMLCanvasElement, world: WorldState, cursor
   // Terrain
   for (let y = 0; y < H; y++)
     for (let x = 0; x < W; x++) {
-      const cell = world.cells[y][x];
+      const cell = world.cells[y]?.[x];
+      if (!cell) continue;
       ctx.fillStyle = tint(TEX[cell.terrain] ?? "#333");
       ctx.fillRect(x * PX, y * PX, PX, PX);
       if (cell.fertility > 50 && (cell.terrain === "grass" || cell.terrain === "plain")) {
@@ -106,7 +107,7 @@ export function renderWorld(canvas: HTMLCanvasElement, world: WorldState, cursor
   // Buildings
   for (let y = 0; y < H; y++)
     for (let x = 0; x < W; x++) {
-      const b = world.cells[y][x].building;
+      const b = world.cells[y]?.[x]?.building;
       if (!b) continue;
       const bx = x * PX, by = y * PX;
       const clr = ({ hut: "#8b6914", farm: "#5a9e4b", house: "#a07828", temple: "#e2c171" } as Record<string, string>)[b] ?? "#8b6914";
