@@ -51,7 +51,7 @@ export default function App() {
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    renderWorld(canvas, world, cursor, hovered);
+    renderWorld(canvas, world, cursor);
   }, [world, cursor, hovered]);
 
   // God power on click
