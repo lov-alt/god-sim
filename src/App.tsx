@@ -1,6 +1,7 @@
 import { useRef, useEffect, useState, useCallback } from "react";
 import { createWorld, tick, applyGodPower, spawnCreature, type GodPower, type Species } from "./engine/world";
 import { renderWorld } from "./engine/renderer";
+import gsap from "gsap";
 
 const GOD_TOOLS: { power: GodPower; icon: string; label: string; key: string }[] = [
   { power: "bless", icon: "✨", label: "Bless", key: "q" },
@@ -23,6 +24,8 @@ const SPAWN_CHOICES: { species: Species; icon: string; label: string }[] = [
 
 export default function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const flashRef = useRef<HTMLDivElement>(null);
   const worldRef = useRef(createWorld());
   const [world, setWorld] = useState(worldRef.current);
   const [power, setPower] = useState<GodPower>("smite");
@@ -61,7 +64,11 @@ export default function App() {
     if (cList.length > 0) {
       setInfo({ x: gx, y: gy, creatures: cList, cell: world.cells[gy]?.[gx] });
     } else {
-      // Fire god power on empty tile
+      // Fire god power on empty tile — shake + flash
+      const container = containerRef.current;
+      const flash = flashRef.current;
+      if (container) gsap.to(container, { x: 3, y: 2, duration: 0.04, repeat: 4, yoyo: true, onComplete: () => gsap.set(container, { x: 0, y: 0 }) });
+      if (flash) gsap.fromTo(flash, { opacity: 0.6 }, { opacity: 0, duration: 0.5 });
       const next = applyGodPower(worldRef.current, power, gx, gy);
       worldRef.current = next;
       setWorld({ ...next });
@@ -95,7 +102,8 @@ export default function App() {
   return (
     <div style={{ display: "flex", height: "100vh", background: "#0a0a12", fontFamily: "system-ui, sans-serif", overflow: "hidden", userSelect: "none" }}>
       {/* Canvas */}
-      <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", position: "relative", background: "#000" }}>
+      <div ref={containerRef} style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", position: "relative", background: "#000" }}>
+        <div ref={flashRef} style={{ position: "absolute", inset: 0, background: "#fff", pointerEvents: "none", opacity: 0, zIndex: 20 }} />
         <canvas ref={canvasRef}
           onClick={handleClick}
           onMouseMove={(e) => {
