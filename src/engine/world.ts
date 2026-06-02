@@ -23,6 +23,7 @@ export interface WorldState {
   cells: Cell[][]; creatures: Creature[]; settlements: Settlement[];
   tick: number; season: number; eventLog: string[]; populationHistory: number[];
   activeEffects: { power: GodPower; x: number; y: number; tick: number }[];
+  pendingSpawns: { species: Species; x: number; y: number }[];
   W: number; H: number;
 }
 
@@ -89,7 +90,7 @@ export function createWorld(): WorldState {
   spawn("tree", 30); spawn("rabbit", 25); spawn("deer", 15); spawn("wolf", 8); spawn("human", 12);
 
   return {
-    cells, creatures, settlements: [], tick: 0, season: 0, eventLog: ["🌍 A new world takes shape. Your creatures await."], populationHistory: [], activeEffects: [], W, H,
+    cells, creatures, settlements: [], tick: 0, season: 0, eventLog: ["🌍 A new world takes shape. Your creatures await."], populationHistory: [], activeEffects: [], pendingSpawns: [], W, H,
   };
 }
 
