@@ -145,6 +145,12 @@ function act(c: Creature, world: WorldState, queue: TickQueue): { c: Creature; l
 
 export function tick(w: WorldState): WorldState {
   const world = { ...w, tick: w.tick + 1, eventLog: [...w.eventLog], creatures: [...w.creatures], cells: w.cells.map((r) => r.map((c) => ({ ...c }))) };
+  // Process pending spawns (god power queue)
+  for (const s of world.pendingSpawns) {
+    world.creatures.push({ id: ID(), species: s.species, x: clamp(s.x, 0, W - 1), y: clamp(s.y, 0, H - 1), health: 80, age: 20, hunger: 20, settlementId: null });
+  }
+  world.pendingSpawns = [];
+
   const queue: TickQueue = { eatenIds: new Set(), offspring: [] };
   const alive: Creature[] = [];
 
@@ -239,6 +245,6 @@ export function applyGodPower(w: WorldState, power: GodPower, x: number, y: numb
 
 export function spawnCreature(w: WorldState, species: Species, x: number, y: number) {
   const c: Creature = { id: ID(), species, x: clamp(x, 0, W - 1), y: clamp(y, 0, H - 1), health: 80, age: 20, hunger: 20, settlementId: null };
-  w.creatures.push(c);
+  w.pendingSpawns.push({ species, x, y });
   w.eventLog.push(`Created ${species}`);
 }
