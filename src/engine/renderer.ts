@@ -115,7 +115,7 @@ function drawPixelSprite(ctx: CanvasRenderingContext2D, sprite: string[] | undef
       if (!line) continue;
       for (let col = 0; col < line.length; col++) {
         const c = PAL[line[col] ?? "."];
-        if (c) ctx.fillRect(x + col * px, y + row * px, px, px);
+        if (c) { ctx.fillStyle = c; ctx.fillRect(x + col * px, y + row * px, px, px); }
       }
     }
   } catch { /* sprite render error — skip */ }
